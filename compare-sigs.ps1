@@ -82,12 +82,33 @@ function IsTotallyNothingFile($fileItem) {
         $fileItem.EndsWith(".vb") -or
         $fileItem.EndsWith(".vbproj") -or
         $fileItem.EndsWith(".overridetasks") -or
+        $fileItem.EndsWith(".manifest") -or
+        $fileItem.EndsWith(".fsproj") -or
+        $fileItem.EndsWith(".fs") -or
+        $fileItem.EndsWith(".proto") -or
+        $fileItem.EndsWith(".razor") -or
+        $fileItem.EndsWith(".cshtml") -or
+        $fileItem.EndsWith(".db") -or
+        $fileItem.EndsWith(".css") -or
+        $fileItem.EndsWith(".ico") -or
+        $fileItem.EndsWith(".eot") -or
+        $fileItem.EndsWith(".otf") -or
+        $fileItem.EndsWith(".ttf") -or
+        $fileItem.EndsWith(".woff") -or
+        $fileItem.EndsWith(".html") -or
+        $fileItem.EndsWith("browserslist") -or
+        $fileItem.EndsWith(".ts") -or
+        $fileItem.EndsWith(".gitignore") -or
+        $fileItem.EndsWith(".gitkeep") -or
+        $fileItem.EndsWith(".env") -or
+        $fileItem.EndsWith(".tsx") -or
+        $fileItem.EndsWith(".gitignore") -or
         $fileItem.EndsWith(".tasks") -or
         $fileItem.EndsWith("minimumMSBuildVersion") -or
         $fileItem.EndsWith("default.win32manifest") -or
         $fileItem.EndsWith(".editorconfig") -or
-        $fileItem.EndsWith(".overridetasks") -or
-        $fileItem.EndsWith(".overridetasks") -or
+        $fileItem.EndsWith(".pubxml") -or
+        $fileItem.EndsWith(".transform") -or
         $fileItem.EndsWith(".myapp") -or
         $fileItem.EndsWith("createdump") -or
         $fileItem.EndsWith(".js") -or
