@@ -216,7 +216,7 @@ function UnpackContainer($fileItem, $fileUnpackRoot) {
                 Set-Content $unpackedSemFile "unpacked"
             }
             catch {
-                Write-Error "Couldn't unpack $fileItem to $fileUnpackRoot"
+                throw "Couldn't unpack $fileItem to $fileUnpackRoot"
                 return [FileUnpackState]::Unknown
             }
         }
@@ -283,7 +283,7 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
                 continue
             }
             
-            Write-Error "$fileItemA was not found in $baseB";
+            throw "$fileItemA was not found in $baseB";
             continue
         }
 
@@ -300,15 +300,7 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
                 
                 $passed = $false
                 
-                Write-Error "Could not find a way to check $fileItemA"
-                $extension = [System.IO.Path]::GetExtension($fileItemA)
-                $fileName = [System.IO.Path]::GetFileName($fileItemA)
-                if ($extension -and !$unknownFiles.ContainsKey($extension)) {
-                    $unknownFiles.Add($extension, $extension)
-                } elseif ($fileName -and !$unknownFiles.ContainsKey($fileName)) {
-                    $unknownFiles.Add($fileName, $fileName)
-                }
-                
+                throw "Could not find a way to check $fileItemA"
             } elseif ($($authenticodeCheckState -eq [FileCheckState]::Passed -or
                       $everyThingElseCheckState -eq [FileCheckState]::Passed -or
                       $nupkgCheckState -eq [FileCheckState]::Passed) -and 
@@ -334,17 +326,10 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
         
         if ($fileUnpackAState -ne $fileUnpackBState) {
             $passed = $false
-            Write-Error "$fileItemA did not unpack the same way as $fileItemB"
+            throw "$fileItemA did not unpack the same way as $fileItemB"
         } elseif ($fileUnpackAState -eq [FileUnpackState]::NotChecked) {
             $passed = $false
-            Write-Error "Could not find a way to unpack or ignore $fileItemA"
-            $extension = [System.IO.Path]::GetExtension($fileItemA)
-            $fileName = [System.IO.Path]::GetFileName($fileItemA)
-            if ($extension -and !$unknownFiles.ContainsKey($extension)) {
-                $unknownFiles.Add($extension, $extension)
-            } elseif ($fileName -and !$unknownFiles.ContainsKey($fileName)) {
-                $unknownFiles.Add($fileName, $fileName)
-            }
+            throw "Could not find a way to unpack or ignore $fileItemA"
         } elseif ($fileUnpackAState -eq [FileUnpackState]::Unpacked) {
             $subDropPassed = VerifySubdrop $fileItemAUnpackRoot $fileItemBUnpackRoot
             $passed = $passed -and $subDropPassed
@@ -359,4 +344,3 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
 }
 
 VerifySubdrop $dropBaseA $dropBaseB
-Write-Host $unknownFiles.Keys
