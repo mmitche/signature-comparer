@@ -4,7 +4,8 @@ Param(
   $versionMap,
   [switch]$force,
   [string]$signToolPath = "signtool.exe",
-  [string]$nugetPath = "nuget.exe"
+  [string]$nugetPath = "nuget.exe",
+  [string]$snPath = "sn.exe"
 )
 
 enum FileCheckState { 
@@ -35,6 +36,7 @@ function IsTotallyNothingFile($fileItem) {
         $fileItem.EndsWith(".psmdcp") -or
         $fileItem.EndsWith(".props") -or
         $fileItem.EndsWith(".targets") -or
+        $fileItem.EndsWith(".Targets") -or
         $fileItem.EndsWith(".cs") -or
         $fileItem.EndsWith(".nuspec") -or
         $fileItem.EndsWith(".h") -or
@@ -50,6 +52,8 @@ function IsTotallyNothingFile($fileItem) {
         $fileItem.EndsWith(".man") -or
         $fileItem.EndsWith(".proj") -or
         $fileItem.EndsWith(".wixpdb") -or
+        $fileItem.EndsWith(".config") -or
+        $fileItem.EndsWith(".toolsetversion") -or
         $fileItem.EndsWith(".inc") -or
         $fileItem.EndsWith(".pl") -or
         $fileItem.EndsWith("corerun") -or
@@ -77,6 +81,13 @@ function IsTotallyNothingFile($fileItem) {
         $fileItem.EndsWith(".rels") -or
         $fileItem.EndsWith(".vb") -or
         $fileItem.EndsWith(".vbproj") -or
+        $fileItem.EndsWith(".overridetasks") -or
+        $fileItem.EndsWith(".tasks") -or
+        $fileItem.EndsWith("minimumMSBuildVersion") -or
+        $fileItem.EndsWith("default.win32manifest") -or
+        $fileItem.EndsWith(".editorconfig") -or
+        $fileItem.EndsWith(".overridetasks") -or
+        $fileItem.EndsWith(".overridetasks") -or
         $fileItem.EndsWith(".myapp") -or
         $fileItem.EndsWith("createdump") -or
         $fileItem.EndsWith(".js") -or
@@ -125,7 +136,7 @@ function CompareNupkgSignature($fileItemA, $fileItemB) {
         if ($fileItemA.EndsWith(".symbols.nupkg")) {
             return [FileCheckState]::Passed
         }
-        Write-Host "Checking $fileItemA against $fileItemB..."
+        Write-Host "Checking (nupkg) $fileItemA against $fileItemB..."
         $certCheckA = & $nugetPath verify -Signatures $fileItemA
         $certCheckB = & $nugetPath verify -Signatures $fileItemB
         
@@ -160,9 +171,33 @@ function CompareNupkgSignature($fileItemA, $fileItemB) {
     }
 }
 
+function CompareStrongName($fileItemA, $fileItemB) {
+    if ($fileItemA.EndsWith(".exe") -or $fileItemA.EndsWith(".dll")) {
+        Write-Host "Checking (sn) $fileItemA against $fileItemB..."
+        $snCheckA = & $snPath -T $fileItemA
+        $snCheckB = & $snPath -T $fileItemB
+        
+        # Replace filenames in the output
+        $strippedCertCheckA = $snCheckA.Replace($fileItemA, "")
+        $strippedCertCheckB = $snCheckB.Replace($fileItemB, "")
+        
+        $diff = Diff $strippedCertCheckA $strippedCertCheckB
+        
+        if ($diff) {
+            Write-Error "  SN check differences between $fileItemA and $fileItemB"
+            return [FileCheckState]::Failed
+        }
+        else {
+            return [FileCheckState]::Passed
+        }
+    } else {
+        return [FileCheckState]::NotChecked
+    }
+}
+
 function CompareAuthenticode($fileItemA, $fileItemB) {
     if ($fileItemA.EndsWith(".exe") -or $fileItemA.EndsWith(".dll")) {
-        Write-Host "Checking $fileItemA against $fileItemB..."
+        Write-Host "Checking (auth) $fileItemA against $fileItemB..."
         $certCheckA = & $signToolPath verify /pa $fileItemA
         $certCheckB = & $signToolPath verify /pa $fileItemB
         
@@ -292,10 +327,12 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
             # Check file, then determine whether it's a container
             [FileCheckState]$authenticodeCheckState = CompareAuthenticode $fileItemA $fileItemB
             [FileCheckState]$nupkgCheckState = CompareNupkgSignature $fileItemA $fileItemB
+            [FileCheckState]$snCheckState = CompareStrongName $fileItemA $fileItemB
             [FileCheckState]$everyThingElseCheckState = CompareEverythingElse $fileItemA $fileItemB
             
             if ($authenticodeCheckState -eq [FileCheckState]::NotChecked -and
                 $everyThingElseCheckState -eq [FileCheckState]::NotChecked -and
+                $snCheckState -eq [FileCheckState]::NotChecked -and
                 $nupkgCheckState -eq [FileCheckState]::NotChecked) {
                 
                 $passed = $false
@@ -303,9 +340,11 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
                 throw "Could not find a way to check $fileItemA"
             } elseif ($($authenticodeCheckState -eq [FileCheckState]::Passed -or
                       $everyThingElseCheckState -eq [FileCheckState]::Passed -or
+                      $snCheckState -eq [FileCheckState]::Passed -or
                       $nupkgCheckState -eq [FileCheckState]::Passed) -and 
                       $($authenticodeCheckState -ne [FileCheckState]::Failed -or
                       $everyThingElseCheckState -ne [FileCheckState]::Failed -or
+                      $snCheckState -ne [FileCheckState]::Failed -or
                       $nupkgCheckState -ne [FileCheckState]::Failed)) {
                 Set-Content $(Escape-Path $alreadyVerifiedSem) "verified"
             } else {
