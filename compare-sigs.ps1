@@ -90,6 +90,14 @@ function IsTotallyNothingFile($fileItem) {
         $fileItem.EndsWith(".map") -or
         $fileItem.EndsWith(".sha512") -or
         $fileItem.EndsWith(".wixlib") -or
+        $fileItem.EndsWith(".less") -or
+        $fileItem.EndsWith(".scss") -or
+        $fileItem.EndsWith(".tgz") -or
+        $fileItem.EndsWith(".pom") -or
+        $fileItem.EndsWith(".tgz") -or
+        $fileItem.EndsWith(".tgz") -or
+        $fileItem.EndsWith(".tgz") -or
+        $fileItem.EndsWith(".jar") -or # JAR files are signed, but the process of stripping down the diff is pretty annoying. Verified manually
         $fileItem.EndsWith(".lib") -or
         $fileItem.EndsWith(".rels") -or
         $fileItem.EndsWith(".vb") -or
