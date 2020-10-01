@@ -20,10 +20,22 @@ enum FileUnpackState {
     Unknown;
 }
 
-[hashtable]$unknownFiles = @{}
-$containers = @(".zip", ".nupkg")
-$nugetCheck = @(".nupkg")
-$noCheck = @(".txt")
+class CheckError {
+    CheckError(
+        [string]$err,
+        [string]$a,
+        [string]$b
+    ){
+        $this.errorName = $err
+        $this.fileA = $a
+        $this.fileB = $b
+    }
+    [string]$errorName
+    [string]$fileA
+    [string]$fileB
+}
+
+$global:errors = new-object System.Collections.ArrayList
 
 function IsTotallyNothingFile($fileItem) {
     if ($fileItem.EndsWith(".txt") -or
@@ -77,6 +89,7 @@ function IsTotallyNothingFile($fileItem) {
         $fileItem.EndsWith(".zip") -or
         $fileItem.EndsWith(".map") -or
         $fileItem.EndsWith(".sha512") -or
+        $fileItem.EndsWith(".wixlib") -or
         $fileItem.EndsWith(".lib") -or
         $fileItem.EndsWith(".rels") -or
         $fileItem.EndsWith(".vb") -or
@@ -114,6 +127,7 @@ function IsTotallyNothingFile($fileItem) {
         $fileItem.EndsWith(".js") -or
         $fileItem.EndsWith(".blat") -or
         $fileItem.EndsWith(".wasm") -or
+        $fileItem.EndsWith(".xdt") -or
         $fileItem.EndsWith("crossgen") -or
         $fileItem.EndsWith("crossgen2") -or
         $fileItem.EndsWith("apphost") -or
@@ -180,8 +194,8 @@ function CompareNupkgSignature($fileItemA, $fileItemB) {
         }
         
         if ($diff) {
-            Write-Error "  Cert check differences between $fileItemA and $fileItemB"
-            Write-Host $diff
+            [void]$global:errors.Add([CheckError]::new("NUPKG_CHECK", $fileItemA, $fileItemB))
+            Write-Error "  Nupkg cert checked failed (NUPKG_CHECK) between $fileItemA and $fileItemB"
             return [FileCheckState]::Failed
         }
         else {
@@ -205,7 +219,8 @@ function CompareStrongName($fileItemA, $fileItemB) {
         $diff = Diff $strippedCertCheckA $strippedCertCheckB
         
         if ($diff) {
-            Write-Error "  SN check differences between $fileItemA and $fileItemB"
+            [void]$global:errors.Add([CheckError]::new("SN_CHECK", $fileItemA, $fileItemB))
+            Write-Error "  SN check failed: SN differences between $fileItemA and $fileItemB"
             return [FileCheckState]::Failed
         }
         else {
@@ -217,33 +232,40 @@ function CompareStrongName($fileItemA, $fileItemB) {
 }
 
 function CompareAuthenticode($fileItemA, $fileItemB) {
-    if ($fileItemA.EndsWith(".exe") -or $fileItemA.EndsWith(".dll")) {
+    if ($fileItemA.EndsWith(".exe") -or $fileItemA.EndsWith(".dll") -or
+        $fileItemA.EndsWith(".ps1") -or $fileItemA.EndsWith(".msi")) {
         Write-Host "Checking (auth) $fileItemA against $fileItemB..."
-        $certCheckA = & $signToolPath verify /pa $fileItemA
-        $certCheckB = & $signToolPath verify /pa $fileItemB
-        
-        # Replace filenames in the output
-        $strippedCertCheckA = $certCheckA.Replace($fileItemA, "")
-        $strippedCertCheckB = $certCheckB.Replace($fileItemB, "")
-        
-        $diff = Diff $strippedCertCheckA $strippedCertCheckB
-        
-        if ($diff) {
-            Write-Error "  Cert check differences between $fileItemA and $fileItemB"
-            return [FileCheckState]::Failed
-        }
-        else {
-            return [FileCheckState]::Passed
-        }
-    } elseif ($fileItemA.EndsWith(".ps1") -or $fileItemA.EndsWith(".msi")) {
         $sigA = Get-AuthenticodeSignature $fileItemA
         $sigB = Get-AuthenticodeSignature $fileItemB
         if ($sigA.SignerCertificate -eq $sigB.SignerCertificate -and
+            
             $sigA.Status -eq $sigB.Status) {
             return [FileCheckState]::Passed
-        } else {
-            Write-Error "  Cert check differences between $fileItemA and $fileItemB"
+
+        } elseif ($sigA.Status -eq "NotSigned" -and $sigB.Status -eq "Valid") {
+            
+            [void]$global:errors.Add([CheckError]::new("AUTH_B_SIG_A_NOSIG", $fileItemA, $fileItemB))
+            Write-Error "  Cert check failed (AUTH_B_SIG_A_NOSIG): $fileItemB has signature but $fileItemA does not"
             return [FileCheckState]::Failed
+
+        } elseif ($sigA.Status -eq "Valid" -and $sigB.Status -eq "NotSigned") {
+            
+            [void]$global:errors.Add([CheckError]::new("AUTH_A_SIG_B_NOSIG", $fileItemA, $fileItemB))
+            Write-Error "  Cert check failed (AUTH_A_SIG_B_NOSIG): $fileItemA has signature but $fileItemB does not"
+            return [FileCheckState]::Failed
+
+        } elseif ($sigA.SignerCertificate -ne $sigB.SignerCertificate) {
+            
+            [void]$global:errors.Add([CheckError]::new("AUTH_SIG_CERT_DIFF", $fileItemA, $fileItemB))
+            Write-Error "  Cert check failed (AUTH_SIG_CERT_DIFF): Cert differences between $fileItemA and $fileItemB"
+            return [FileCheckState]::Failed
+
+        } else {
+            
+            [void]$global:errors.Add([CheckError]::new("AUTH_SIG_DIFF_OTHER", $fileItemA, $fileItemB))
+            Write-Error "  Cert check failed (AUTH_SIG_DIFF_OTHER): Check diff between $fileItemA and $fileItemB"
+            return [FileCheckState]::Failed
+
         }
     } else {
         return [FileCheckState]::NotChecked
@@ -346,6 +368,7 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
         if (-not $(Test-Path $(Escape-Path $alreadyVerifiedSem))) {
         
             # Check file, then determine whether it's a container
+            $authenticodeCheckState2 = CompareAuthenticode $fileItemA $fileItemB
             [FileCheckState]$authenticodeCheckState = CompareAuthenticode $fileItemA $fileItemB
             [FileCheckState]$nupkgCheckState = CompareNupkgSignature $fileItemA $fileItemB
             [FileCheckState]$snCheckState = CompareStrongName $fileItemA $fileItemB
@@ -363,20 +386,14 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
                       $everyThingElseCheckState -eq [FileCheckState]::Passed -or
                       $snCheckState -eq [FileCheckState]::Passed -or
                       $nupkgCheckState -eq [FileCheckState]::Passed) -and 
-                      $($authenticodeCheckState -ne [FileCheckState]::Failed -or
-                      $everyThingElseCheckState -ne [FileCheckState]::Failed -or
-                      $snCheckState -ne [FileCheckState]::Failed -or
+                      $($authenticodeCheckState -ne [FileCheckState]::Failed -and
+                      $everyThingElseCheckState -ne [FileCheckState]::Failed -and
+                      $snCheckState -ne [FileCheckState]::Failed -and
                       $nupkgCheckState -ne [FileCheckState]::Failed)) {
                 Set-Content $(Escape-Path $alreadyVerifiedSem) "verified"
             } else {
                 $passed = $false
             }
-        }
-        
-        $alreadyUnpackedAndVerifiedSubdropSem = "$fileItemA.vfied"
-        $semFileExists = $(Test-Path $(Escape-Path $alreadyVerifiedSem))
-        if ($force -and $semFileExists) {
-            rm $alreadyVerifiedSem
         }
         
         $fileItemAUnpackRoot = "$fileItemA.unpk"
@@ -403,4 +420,11 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
     return $passed
 }
 
-VerifySubdrop $dropBaseA $dropBaseB
+if ($(VerifySubdrop $dropBaseA $dropBaseB)) {
+    Write-Host "Passed"
+} else {
+    Write-Host "Failed"
+}
+
+Write-Host $global:errors
+$global:errors
