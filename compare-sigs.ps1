@@ -94,8 +94,8 @@ function IsTotallyNothingFile($fileItem) {
         $fileItem.EndsWith(".scss") -or
         $fileItem.EndsWith(".tgz") -or
         $fileItem.EndsWith(".pom") -or
-        $fileItem.EndsWith(".p7s") -or
-        $fileItem.EndsWith(".tgz") -or
+        $fileItem.EndsWith(".psd1") -or
+        $fileItem.EndsWith(".psm1") -or
         $fileItem.EndsWith(".tgz") -or
         $fileItem.EndsWith(".jar") -or # JAR files are signed, but the process of stripping down the diff is pretty annoying. Verified manually
         $fileItem.EndsWith(".lib") -or
@@ -176,9 +176,6 @@ function CompareEverythingElse($fileItemA, $fileItemB) {
 
 function CompareNupkgSignature($fileItemA, $fileItemB) {
     if ($fileItemA.EndsWith(".nupkg")) {
-        if ($fileItemA.EndsWith(".symbols.nupkg")) {
-            return [FileCheckState]::Passed
-        }
         Write-Host "Checking (nupkg) $fileItemA against $fileItemB..."
         $certCheckA = & $nugetPath verify -Signatures $fileItemA
         $certCheckB = & $nugetPath verify -Signatures $fileItemB
@@ -363,6 +360,7 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
                 $fileItemA.EndsWith("}.map") -or
                 $fileItemA.EndsWith("MergedManifest.xml") -or
                 $fileItemA.EndsWith(".vfied") -or
+                $fileItemA.EndsWith(".p7s") -or # This would mean that one nupkg wasn't signed, which will show up in another error
                 $fileItemA.EndsWith(".psmdcp") -or # This file type has a name that is some kind of hash which varies package to package. It's just an xml file
                 $fileItemA.Contains("`[Content_Types`]") -or
                 $fileItemA.Contains("mscordaccore_")) {
@@ -434,5 +432,4 @@ if ($(VerifySubdrop $dropBaseA $dropBaseB)) {
     Write-Host "Failed"
 }
 
-Write-Host $global:errors
 $global:errors
