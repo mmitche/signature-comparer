@@ -94,7 +94,7 @@ function IsTotallyNothingFile($fileItem) {
         $fileItem.EndsWith(".scss") -or
         $fileItem.EndsWith(".tgz") -or
         $fileItem.EndsWith(".pom") -or
-        $fileItem.EndsWith(".tgz") -or
+        $fileItem.EndsWith(".p7s") -or
         $fileItem.EndsWith(".tgz") -or
         $fileItem.EndsWith(".tgz") -or
         $fileItem.EndsWith(".jar") -or # JAR files are signed, but the process of stripping down the diff is pretty annoying. Verified manually
