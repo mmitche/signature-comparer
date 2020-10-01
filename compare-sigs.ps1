@@ -191,9 +191,10 @@ function CompareNupkgSignature($fileItemA, $fileItemB) {
         $strippedCertCheckA = $certCheckA.Replace($toTestFileA.file, "")
         $strippedCertCheckB = $certCheckB.Replace($toTestFileB.file, "")
         
-        # Replace file names without extension in the output
-        $strippedCertCheckA = $strippedCertCheckA.Replace([System.IO.Path]::GetFileNameWithoutExtension($toTestFileA.file), "")
-        $strippedCertCheckB = $strippedCertCheckB.Replace([System.IO.Path]::GetFileNameWithoutExtension($toTestFileB.file), "")
+        # Replace file names without extension in the output. Use the original file name.
+        # If symbols.nupkg, remove that bit.
+        $strippedCertCheckA = $strippedCertCheckA.Replace([System.IO.Path]::GetFileNameWithoutExtension($fileItemA.Replace(".symbols.nupkg", ".nupkg")), "")
+        $strippedCertCheckB = $strippedCertCheckB.Replace([System.IO.Path]::GetFileNameWithoutExtension($fileItemB.Replace(".symbols.nupkg", ".nupkg")), "")
         
         $diff = Diff $strippedCertCheckA $strippedCertCheckB
         
