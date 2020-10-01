@@ -177,16 +177,23 @@ function CompareEverythingElse($fileItemA, $fileItemB) {
 function CompareNupkgSignature($fileItemA, $fileItemB) {
     if ($fileItemA.EndsWith(".nupkg")) {
         Write-Host "Checking (nupkg) $fileItemA against $fileItemB..."
-        $certCheckA = & $nugetPath verify -Signatures $fileItemA
-        $certCheckB = & $nugetPath verify -Signatures $fileItemB
+        
+        $toTestFileA = CreateShortFileIfVeryLong $fileItemA
+        $toTestFileB = CreateShortFileIfVeryLong $fileItemB
+        
+        $certCheckA = & $nugetPath verify -Signatures $toTestFileA.file
+        $certCheckB = & $nugetPath verify -Signatures $toTestFileB.file
+        
+        DeleteShortFileIfVeryLong $toTestFileA
+        DeleteShortFileIfVeryLong $toTestFileB
         
         # Replace filenames in the output
-        $strippedCertCheckA = $certCheckA.Replace($fileItemA, "")
-        $strippedCertCheckB = $certCheckB.Replace($fileItemB, "")
+        $strippedCertCheckA = $certCheckA.Replace($toTestFileA.file, "")
+        $strippedCertCheckB = $certCheckB.Replace($toTestFileB.file, "")
         
         # Replace file names without extension in the output
-        $strippedCertCheckA = $strippedCertCheckA.Replace([System.IO.Path]::GetFileNameWithoutExtension($fileItemA), "")
-        $strippedCertCheckB = $strippedCertCheckB.Replace([System.IO.Path]::GetFileNameWithoutExtension($fileItemB), "")
+        $strippedCertCheckA = $strippedCertCheckA.Replace([System.IO.Path]::GetFileNameWithoutExtension($toTestFileA.file), "")
+        $strippedCertCheckB = $strippedCertCheckB.Replace([System.IO.Path]::GetFileNameWithoutExtension($toTestFileB.file), "")
         
         $diff = Diff $strippedCertCheckA $strippedCertCheckB
         
@@ -211,21 +218,44 @@ function CompareNupkgSignature($fileItemA, $fileItemB) {
     }
 }
 
+function CreateShortFileIfVeryLong($fileItem) {
+    if ($fileItem.Length -gt 255) {
+        $tempFile = New-TemporaryFile
+        cp $fileItem $tempFile
+        return @{file = $tempFile; isTemp = $true}
+    } else {
+        return @{file = $fileItem; isTemp = $false}
+    }
+}
+
+function DeleteShortFileIfVeryLong($potentiallyShortFileInfo) {
+    if ($potentiallyShortFileInfo.isTemp) {
+        rm $potentiallyShortFileInfo.file
+    }
+}
+
 function CompareStrongName($fileItemA, $fileItemB) {
     if ($fileItemA.EndsWith(".exe") -or $fileItemA.EndsWith(".dll")) {
         Write-Host "Checking (sn) $fileItemA against $fileItemB..."
-        $snCheckA = & $snPath -T $fileItemA
-        $snCheckB = & $snPath -T $fileItemB
+        
+        $toTestFileA = CreateShortFileIfVeryLong $fileItemA
+        $toTestFileB = CreateShortFileIfVeryLong $fileItemB
+        
+        $snCheckA = & $snPath -T $toTestFileA.file
+        $snCheckB = & $snPath -T $toTestFileB.file
         
         # Replace filenames in the output
-        $strippedCertCheckA = $snCheckA.Replace($fileItemA, "")
-        $strippedCertCheckB = $snCheckB.Replace($fileItemB, "")
+        $strippedCertCheckA = $snCheckA.Replace($toTestFileA.file, "")
+        $strippedCertCheckB = $snCheckB.Replace($toTestFileB.file, "")
         
         $diff = Diff $strippedCertCheckA $strippedCertCheckB
         
+        DeleteShortFileIfVeryLong $toTestFileA
+        DeleteShortFileIfVeryLong $toTestFileB
+
         if ($diff) {
             [void]$global:errors.Add([CheckError]::new("SN_CHECK", $fileItemA, $fileItemB))
-            Write-Error "  SN check failed: SN differences between $fileItemA and $fileItemB"
+            Write-Error "  SN check failed (SN_CHECK): SN differences between $fileItemA and $fileItemB"
             return [FileCheckState]::Failed
         }
         else {
@@ -240,8 +270,16 @@ function CompareAuthenticode($fileItemA, $fileItemB) {
     if ($fileItemA.EndsWith(".exe") -or $fileItemA.EndsWith(".dll") -or
         $fileItemA.EndsWith(".ps1") -or $fileItemA.EndsWith(".msi")) {
         Write-Host "Checking (auth) $fileItemA against $fileItemB..."
-        $sigA = Get-AuthenticodeSignature $fileItemA
-        $sigB = Get-AuthenticodeSignature $fileItemB
+        
+        $toTestFileA = CreateShortFileIfVeryLong $fileItemA
+        $toTestFileB = CreateShortFileIfVeryLong $fileItemB
+        
+        $sigA = Get-AuthenticodeSignature $toTestFileA.file
+        $sigB = Get-AuthenticodeSignature $toTestFileB.file
+        
+        DeleteShortFileIfVeryLong $toTestFileA
+        DeleteShortFileIfVeryLong $toTestFileB
+        
         if ($sigA.SignerCertificate -eq $sigB.SignerCertificate -and
             
             $sigA.Status -eq $sigB.Status) {
