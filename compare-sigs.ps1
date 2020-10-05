@@ -208,8 +208,8 @@ function CompareNupkgSignature($fileItemA, $fileItemB) {
         
         if ($diff) {
             if ($strippedCertCheckA.Contains("NU3004") -and -not $strippedCertCheckB.Contains("NU3004")) {
-                [void]$global:errors.Add([CheckError]::new("NUPKG_B_SIG_A_NOSIG", $fileItemA, $fileItemB))
-                Write-Error "  Nupkg cert checked failed (NUPKG_B_SIG_A_NOSIG) between $fileItemA and $fileItemB"
+                [void]$global:errors.Add([CheckError]::new("NUPKG_A_NOSIG_B_SIG", $fileItemA, $fileItemB))
+                Write-Error "  Nupkg cert checked failed (NUPKG_A_NOSIG_B_SIG) between $fileItemA and $fileItemB"
                 return [FileCheckState]::Failed
             } elseif ($strippedCertCheckB.Contains("NU3004") -and -not $strippedCertCheckA.Contains("NU3004")) {
                 [void]$global:errors.Add([CheckError]::new("NUPKG_A_SIG_B_NOSIG", $fileItemA, $fileItemB))
