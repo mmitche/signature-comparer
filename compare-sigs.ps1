@@ -181,8 +181,8 @@ function CompareNupkgSignature($fileItemA, $fileItemB) {
         $toTestFileA = CreateShortFileIfVeryLong $fileItemA
         $toTestFileB = CreateShortFileIfVeryLong $fileItemB
         
-        $certCheckA = & $nugetPath verify -Signatures $toTestFileA.file
-        $certCheckB = & $nugetPath verify -Signatures $toTestFileB.file
+        $certCheckA = $(& $nugetPath verify -Signatures $toTestFileA.file 2>&1 | % ToString) -join ''
+        $certCheckB = $(& $nugetPath verify -Signatures $toTestFileB.file 2>&1 | % ToString) -join ''
         
         DeleteShortFileIfVeryLong $toTestFileA
         DeleteShortFileIfVeryLong $toTestFileB
@@ -207,9 +207,19 @@ function CompareNupkgSignature($fileItemA, $fileItemB) {
         }
         
         if ($diff) {
-            [void]$global:errors.Add([CheckError]::new("NUPKG_CHECK", $fileItemA, $fileItemB))
-            Write-Error "  Nupkg cert checked failed (NUPKG_CHECK) between $fileItemA and $fileItemB"
-            return [FileCheckState]::Failed
+            if ($strippedCertCheckA.Contains("NU3004") -and -not $strippedCertCheckB.Contains("NU3004")) {
+                [void]$global:errors.Add([CheckError]::new("NUPKG_B_SIG_A_NOSIG", $fileItemA, $fileItemB))
+                Write-Error "  Nupkg cert checked failed (NUPKG_B_SIG_A_NOSIG) between $fileItemA and $fileItemB"
+                return [FileCheckState]::Failed
+            } elseif ($strippedCertCheckB.Contains("NU3004") -and -not $strippedCertCheckA.Contains("NU3004")) {
+                [void]$global:errors.Add([CheckError]::new("NUPKG_A_SIG_B_NOSIG", $fileItemA, $fileItemB))
+                Write-Error "  Nupkg cert checked failed (NUPKG_A_SIG_B_NOSIG) between $fileItemA and $fileItemB"
+                return [FileCheckState]::Failed
+            } else {
+                [void]$global:errors.Add([CheckError]::new("NUPKG_CHECK_OTHER", $fileItemA, $fileItemB))
+                Write-Error "  Nupkg cert checked failed (NUPKG_CHECK_OTHER) between $fileItemA and $fileItemB"
+                return [FileCheckState]::Failed
+            }
         }
         else {
             return [FileCheckState]::Passed
@@ -288,7 +298,7 @@ function CompareAuthenticode($fileItemA, $fileItemB) {
 
         } elseif ($sigA.Status -eq "NotSigned" -and $sigB.Status -eq "Valid") {
             
-            [void]$global:errors.Add([CheckError]::new("AUTH_B_SIG_A_NOSIG", $fileItemA, $fileItemB))
+            [void]$global:errors.Add([CheckError]::new("AUTH_A_NOSIG_B_SIG", $fileItemA, $fileItemB))
             Write-Error "  Cert check failed (AUTH_B_SIG_A_NOSIG): $fileItemB has signature but $fileItemA does not"
             return [FileCheckState]::Failed
 
@@ -399,6 +409,7 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
                 $fileItemA.EndsWith("}.map") -or
                 $fileItemA.EndsWith("MergedManifest.xml") -or
                 $fileItemA.EndsWith(".vfied") -or
+                $fileItemA.Contains("Microsoft.NETCore.Runtime.ICU.Transport") -or
                 $fileItemA.EndsWith(".p7s") -or # This would mean that one nupkg wasn't signed, which will show up in another error
                 $fileItemA.EndsWith(".psmdcp") -or # This file type has a name that is some kind of hash which varies package to package. It's just an xml file
                 $fileItemA.Contains("`[Content_Types`]") -or
