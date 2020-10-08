@@ -68,6 +68,7 @@ function IsTotallyNothingFile($fileItem) {
         $fileItem.EndsWith(".toolsetversion") -or
         $fileItem.EndsWith(".inc") -or
         $fileItem.EndsWith(".pl") -or
+        $fileItem.EndsWith(".swr") -or
         $fileItem.EndsWith("corerun") -or
         $fileItem.EndsWith("opt") -or
         $fileItem.EndsWith("llc") -or
@@ -142,10 +143,12 @@ function IsTotallyNothingFile($fileItem) {
         $fileItem.EndsWith("singlefilehost") -or
         $fileItem.EndsWith(".vbproj.user") -or
         $fileItem.EndsWith(".csproj.user") -or
+        $fileItem.EndsWith("-.") -or
         $fileItem.EndsWith("_._") -or
         $fileItem.EndsWith("LICENSE") -or
         $fileItem.EndsWith(".dat") -or
         $fileItem.EndsWith(".wixpack.zip") -or
+        $fileItem.EndsWith(".wixobj") -or
         $fileItem.EndsWith(".xaml") -or
         $fileItem.EndsWith(".dylib") -or
         $fileItem.EndsWith(".inl") -or
@@ -418,7 +421,27 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
         foreach ($mapItem in $versionMap) {
             $fileItemB = $replacedBaseItemB.Replace($mapItem.key, $mapItem.value)
             if (-not $(Test-Path $(Escape-Path $fileItemB))) {
-                $fileItemB = $null
+                # If fileItemB's path is different than mapItem.key,
+                # then we should check the version map for a second level of
+                # items. There are many places in SDK and installer
+                # where multiple versions appear in a path
+                if ($fileItemB -ne $replacedBaseItemB) {
+                    $partiallyReplacedBaseItemB = $fileItemB
+                    foreach ($mapItem in $versionMap) {
+                        $fileItemB = $partiallyReplacedBaseItemB.Replace($mapItem.key, $mapItem.value)
+                        if (-not $(Test-Path $(Escape-Path $fileItemB))) {
+                            $fileItemB = $null
+                        }
+                        else {
+                            break;
+                        }
+                    }
+                } else {
+                    $fileItemB = $null
+                }
+                if ($fileItemB) {
+                    break;
+                }
             }
             else {
                 break;
