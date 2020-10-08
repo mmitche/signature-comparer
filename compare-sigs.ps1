@@ -132,7 +132,6 @@ function IsTotallyNothingFile($fileItem) {
         $fileItem.EndsWith(".transform") -or
         $fileItem.EndsWith(".myapp") -or
         $fileItem.EndsWith("createdump") -or
-        $fileItem.EndsWith(".js") -or
         $fileItem.EndsWith(".blat") -or
         $fileItem.EndsWith(".wasm") -or
         $fileItem.EndsWith(".xdt") -or
@@ -167,6 +166,37 @@ function IsTotallyNothingFile($fileItem) {
     return $false
 }
 
+$beginSigBlockStr = "Begin signature block"
+
+function CompareJsSignature($fileItemA, $fileItemB) {
+    if ($fileItemA.EndsWith(".js")) {
+        Write-Host "Checking (js) $fileItemA against $fileItemB..."
+        
+        $toTestFileA = CreateShortFileIfVeryLong $fileItemA
+        $toTestFileB = CreateShortFileIfVeryLong $fileItemB
+        
+        $certCheckA = Select-String -Path $toTestFileA.file -Pattern $beginSigBlockStr -Quiet
+        $certCheckB = Select-String -Path $toTestFileB.file -Pattern $beginSigBlockStr -Quiet
+        
+        DeleteShortFileIfVeryLong $toTestFileA
+        DeleteShortFileIfVeryLong $toTestFileB
+        
+        if ($certCheckA -and -not $certCheckB) {
+            [void]$global:errors.Add([CheckError]::new("JS_A_SIG_B_NOSIG", $fileItemA, $fileItemB))
+            Write-Error "  JS cert checked failed (JS_A_SIG_B_NOSIG) between $fileItemA and $fileItemB"
+            return [FileCheckState]::Failed
+        } elseif (-not $certCheckA -and $certCheckB) {
+            [void]$global:errors.Add([CheckError]::new("JS_A_NOSIG_B_SIG", $fileItemA, $fileItemB))
+            Write-Error "  JS cert checked failed (JS_A_NOSIG_B_SIG) between $fileItemA and $fileItemB"
+            return [FileCheckState]::Failed
+        } else {        
+            return [FileCheckState]::Passed
+        }
+    } else {
+        return [FileCheckState]::NotChecked
+    }
+}
+
 function CompareEverythingElse($fileItemA, $fileItemB) {
     if (IsTotallyNothingFile $fileItemA) {
         return [FileCheckState]::Passed
@@ -181,8 +211,8 @@ function CompareNupkgSignature($fileItemA, $fileItemB) {
         $toTestFileA = CreateShortFileIfVeryLong $fileItemA
         $toTestFileB = CreateShortFileIfVeryLong $fileItemB
         
-        $certCheckA = $(& $nugetPath verify -Signatures $toTestFileA.file 2>&1 | % ToString) -join ''
-        $certCheckB = $(& $nugetPath verify -Signatures $toTestFileB.file 2>&1 | % ToString) -join ''
+        $certCheckA = & $nugetPath verify -Signatures $toTestFileA.file
+        $certCheckB = & $nugetPath verify -Signatures $toTestFileB.file
         
         DeleteShortFileIfVeryLong $toTestFileA
         DeleteShortFileIfVeryLong $toTestFileB
@@ -216,6 +246,7 @@ function CompareNupkgSignature($fileItemA, $fileItemB) {
                 Write-Error "  Nupkg cert checked failed (NUPKG_A_SIG_B_NOSIG) between $fileItemA and $fileItemB"
                 return [FileCheckState]::Failed
             } else {
+                Write-Host $($diff -join '`n')
                 [void]$global:errors.Add([CheckError]::new("NUPKG_CHECK_OTHER", $fileItemA, $fileItemB))
                 Write-Error "  Nupkg cert checked failed (NUPKG_CHECK_OTHER) between $fileItemA and $fileItemB"
                 return [FileCheckState]::Failed
@@ -428,12 +459,14 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
             [FileCheckState]$authenticodeCheckState = CompareAuthenticode $fileItemA $fileItemB
             [FileCheckState]$nupkgCheckState = CompareNupkgSignature $fileItemA $fileItemB
             [FileCheckState]$snCheckState = CompareStrongName $fileItemA $fileItemB
+            [FileCheckState]$jsCheckState = CompareJsSignature $fileItemA $fileItemB
             [FileCheckState]$everyThingElseCheckState = CompareEverythingElse $fileItemA $fileItemB
             
             if ($authenticodeCheckState -eq [FileCheckState]::NotChecked -and
                 $everyThingElseCheckState -eq [FileCheckState]::NotChecked -and
                 $snCheckState -eq [FileCheckState]::NotChecked -and
-                $nupkgCheckState -eq [FileCheckState]::NotChecked) {
+                $nupkgCheckState -eq [FileCheckState]::NotChecked -and
+                $jsCheckState -eq [FileCheckState]::NotChecked) {
                 
                 $passed = $false
                 
@@ -441,10 +474,12 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
             } elseif ($($authenticodeCheckState -eq [FileCheckState]::Passed -or
                       $everyThingElseCheckState -eq [FileCheckState]::Passed -or
                       $snCheckState -eq [FileCheckState]::Passed -or
+                      $jsCheckState -eq [FileCheckState]::Passed -or
                       $nupkgCheckState -eq [FileCheckState]::Passed) -and 
                       $($authenticodeCheckState -ne [FileCheckState]::Failed -and
                       $everyThingElseCheckState -ne [FileCheckState]::Failed -and
                       $snCheckState -ne [FileCheckState]::Failed -and
+                      $jsCheckState -ne [FileCheckState]::Failed -and
                       $nupkgCheckState -ne [FileCheckState]::Failed)) {
                 Set-Content $(Escape-Path $alreadyVerifiedSem) "verified"
             } else {
