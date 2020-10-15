@@ -69,6 +69,7 @@ function IsTotallyNothingFile($fileItem) {
         $fileItem.EndsWith(".inc") -or
         $fileItem.EndsWith(".pl") -or
         $fileItem.EndsWith(".swr") -or
+        $fileItem.EndsWith(".Config") -or
         $fileItem.EndsWith("corerun") -or
         $fileItem.EndsWith("opt") -or
         $fileItem.EndsWith("llc") -or
@@ -84,13 +85,35 @@ function IsTotallyNothingFile($fileItem) {
         $fileItem.EndsWith(".dbg") -or
         $fileItem.EndsWith(".pkg") -or
         $fileItem.EndsWith(".pdb") -or
+        $fileItem.EndsWith(".cxspec") -or
         $fileItem.EndsWith(".deb") -or
+        $fileItem.EndsWith("README") -or
         $fileItem.EndsWith(".rpm") -or
         $fileItem.EndsWith(".tar.gz") -or
         $fileItem.EndsWith(".zip") -or
         $fileItem.EndsWith(".map") -or
+        $fileItem.EndsWith(".cache") -or
+        $fileItem.EndsWith(".CopyComplete") -or
+        $fileItem.EndsWith(".sarif") -or
+        $fileItem.EndsWith(".resx") -or
+        $fileItem.EndsWith(".snk") -or
+        $fileItem.EndsWith(".projitems") -or
+        $fileItem.EndsWith(".shproj") -or
+        $fileItem.EndsWith(".dcproj") -or
+        $fileItem.EndsWith(".Stamp") -or
+        $fileItem.EndsWith("word") -or
+        $fileItem.EndsWith(".filters") -or
+        $fileItem.EndsWith(".user") -or
+        $fileItem.EndsWith(".unknownproj") -or
+        $fileItem.EndsWith(".sha") -or
+        $fileItem.EndsWith(".settings") -or
+        $fileItem.EndsWith(".runsettings") -or
+        $fileItem.EndsWith(".rsp") -or
+        $fileItem.EndsWith(".xsd") -or
+        $fileItem.EndsWith(".tlb") -or
         $fileItem.EndsWith(".sha512") -or
         $fileItem.EndsWith(".wixlib") -or
+        $fileItem.EndsWith(".yml") -or
         $fileItem.EndsWith(".less") -or
         $fileItem.EndsWith(".scss") -or
         $fileItem.EndsWith(".tgz") -or
@@ -123,6 +146,10 @@ function IsTotallyNothingFile($fileItem) {
         $fileItem.EndsWith(".gitignore") -or
         $fileItem.EndsWith(".gitkeep") -or
         $fileItem.EndsWith(".env") -or
+        $fileItem.EndsWith(".tsx") -or
+        $fileItem.EndsWith(".rtf") -or
+        $fileItem.EndsWith(".tsx") -or
+        $fileItem.EndsWith(".tsx") -or
         $fileItem.EndsWith(".tsx") -or
         $fileItem.EndsWith(".gitignore") -or
         $fileItem.EndsWith(".tasks") -or
@@ -215,7 +242,9 @@ function CompareNupkgSignature($fileItemA, $fileItemB) {
         $toTestFileB = CreateShortFileIfVeryLong $fileItemB
         
         $certCheckA = & $nugetPath verify -Signatures $toTestFileA.file
+        $certCheckAFailed = $($LASTEXITCODE -ne 0)
         $certCheckB = & $nugetPath verify -Signatures $toTestFileB.file
+        $certCheckBFailed = $($LASTEXITCODE -ne 0)
         
         DeleteShortFileIfVeryLong $toTestFileA
         DeleteShortFileIfVeryLong $toTestFileB
@@ -240,11 +269,11 @@ function CompareNupkgSignature($fileItemA, $fileItemB) {
         }
         
         if ($diff) {
-            if ($strippedCertCheckA.Contains("NU3004") -and -not $strippedCertCheckB.Contains("NU3004")) {
+            if ($certCheckAFailed -and -not $certCheckBFailed) {
                 [void]$global:errors.Add([CheckError]::new("NUPKG_A_NOSIG_B_SIG", $fileItemA, $fileItemB))
                 Write-Error "  Nupkg cert checked failed (NUPKG_A_NOSIG_B_SIG) between $fileItemA and $fileItemB"
                 return [FileCheckState]::Failed
-            } elseif ($strippedCertCheckB.Contains("NU3004") -and -not $strippedCertCheckA.Contains("NU3004")) {
+            } elseif ($certCheckBFailed -and -not $certCheckAFailed) {
                 [void]$global:errors.Add([CheckError]::new("NUPKG_A_SIG_B_NOSIG", $fileItemA, $fileItemB))
                 Write-Error "  Nupkg cert checked failed (NUPKG_A_SIG_B_NOSIG) between $fileItemA and $fileItemB"
                 return [FileCheckState]::Failed
@@ -363,8 +392,11 @@ function CompareAuthenticode($fileItemA, $fileItemB) {
 function UnpackContainer($fileItem, $fileUnpackRoot) {
     # Don't unpack wixpack.zips becuase they aren't actually
     # repacked after signing anyway.
-    if ($($fileItem.EndsWith(".zip") -or $fileItem.EndsWith(".nupkg")) -and
-        -not $fileItem.EndsWith("wixpack.zip")) {
+    if ($($fileItem.EndsWith(".zip") -or $fileItem.EndsWith(".nupkg")) `
+        -and -not $fileItem.EndsWith("wixpack.zip") `
+        -and -not $fileItem.Contains("Microsoft.NET.Sdk.Publish") `
+        -and -not $fileItem.Contains("Microsoft.NET.Sdk.Web") `
+        -and -not $fileItem.Contains("Microsoft.NET.Sdk.Worker")) {
         $unpackedSemFile = Join-Path $fileUnpackRoot "unpacked.sem"
         $semFileExists = $(Test-Path $unpackedSemFile)
         if ($force -and $semFileExists) {
@@ -382,6 +414,7 @@ function UnpackContainer($fileItem, $fileUnpackRoot) {
                 Set-Content $unpackedSemFile "unpacked"
             }
             catch {
+                Write-Host $_
                 throw "Couldn't unpack $fileItem to $fileUnpackRoot"
                 return [FileUnpackState]::Unknown
             }
@@ -456,22 +489,24 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
         
         if (!$fileItemB) {
             # A few files we don't care about right now
-            if ($fileItemA.EndsWith("-engine.exe") -or
-                $fileItemA.EndsWith("-engine.exe.sha512") -or
-                $fileItemA.EndsWith(".wixpack.zip.sha512") -or
-                $fileItemA.EndsWith(".wixpack.zip") -or
-                $fileItemA.EndsWith("}.map") -or
-                $fileItemA.EndsWith("MergedManifest.xml") -or
-                $fileItemA.EndsWith(".vfied") -or
-                $fileItemA.Contains("Microsoft.NETCore.Runtime.ICU.Transport") -or
-                $fileItemA.EndsWith(".p7s") -or # This would mean that one nupkg wasn't signed, which will show up in another error
-                $fileItemA.EndsWith(".psmdcp") -or # This file type has a name that is some kind of hash which varies package to package. It's just an xml file
-                $fileItemA.Contains("`[Content_Types`]") -or
+            if ($fileItemA.EndsWith("-engine.exe") -or `
+                $fileItemA.EndsWith("-engine.exe.sha512") -or `
+                $fileItemA.EndsWith(".wixpack.zip.sha512") -or `
+                $fileItemA.EndsWith(".wixpack.zip") -or `
+                $fileItemA.EndsWith("}.map") -or `
+                $fileItemA.EndsWith("MergedManifest.xml") -or `
+                $fileItemA.EndsWith("RuntimeList.xml") -or `
+                $fileItemA.Contains(".template.config") -or `
+                $fileItemA.EndsWith(".vfied") -or `
+                $fileItemA.Contains("Microsoft.NETCore.Runtime.ICU.Transport") -or `
+                $fileItemA.EndsWith(".p7s") -or `
+                $fileItemA.EndsWith(".psmdcp") -or `
+                $fileItemA.Contains("`[Content_Types`]") -or `
                 $fileItemA.Contains("mscordaccore_")) {
                 continue
             }
             
-            throw "$fileItemA was not found in $baseB";
+            [void]$global:errors.Add([CheckError]::new("FILE_NOT_FOUND_IN_B", $fileItemA, $fileItemA))
             continue
         }
 
@@ -493,7 +528,7 @@ function VerifySubdrop([string]$baseA, [string]$baseB) {
                 
                 $passed = $false
                 
-                throw "Could not find a way to check $fileItemA"
+                [void]$global:errors.Add([CheckError]::new("NO_WAY_TO_CHECK", $fileItemA, $fileItemB))
             } elseif ($($authenticodeCheckState -eq [FileCheckState]::Passed -or
                       $everyThingElseCheckState -eq [FileCheckState]::Passed -or
                       $snCheckState -eq [FileCheckState]::Passed -or
